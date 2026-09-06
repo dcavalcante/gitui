@@ -5,6 +5,7 @@
 
 pub mod blame;
 pub mod branch;
+mod checkout;
 pub mod commit;
 mod commit_details;
 pub mod commit_files;
@@ -45,6 +46,7 @@ pub use branch::{
 	merge_rebase::merge_upstream_rebase, rename::rename_branch,
 	validate_branch_name, BranchCompare, BranchDetails, BranchInfo,
 };
+pub use checkout::{checkout_with_method, CheckoutMethod};
 pub use commit::{amend, commit, tag_commit};
 pub use commit_details::{
 	get_commit_details, CommitDetails, CommitMessage, CommitSignature,
