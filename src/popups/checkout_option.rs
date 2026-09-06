@@ -3,7 +3,6 @@ use crate::components::{
 	DrawableComponent, EventState,
 };
 use crate::queue::{InternalEvent, NeedsUpdate};
-use crate::strings::CheckoutOptions;
 use crate::try_or_popup;
 use crate::{
 	app::Environment,
@@ -13,9 +12,9 @@ use crate::{
 	ui::{self, style::SharedTheme},
 };
 use anyhow::{Ok, Result};
-use asyncgit::sync::branch::checkout_remote_branch;
-use asyncgit::sync::status::discard_status;
-use asyncgit::sync::{checkout_branch, BranchInfo, RepoPath};
+use asyncgit::sync::{
+	checkout_with_method, BranchInfo, CheckoutMethod, RepoPath,
+};
 use crossterm::event::Event;
 use ratatui::{
 	layout::{Alignment, Rect},
@@ -24,11 +23,60 @@ use ratatui::{
 	Frame,
 };
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum CheckoutOption {
+	KeepLocalChanges,
+	StashAndReapply,
+	DiscardAllLocalChanges,
+}
+
+impl CheckoutOption {
+	const fn previous(self) -> Self {
+		match self {
+			Self::KeepLocalChanges => Self::DiscardAllLocalChanges,
+			Self::StashAndReapply => Self::KeepLocalChanges,
+			Self::DiscardAllLocalChanges => Self::StashAndReapply,
+		}
+	}
+
+	const fn next(self) -> Self {
+		match self {
+			Self::KeepLocalChanges => Self::StashAndReapply,
+			Self::StashAndReapply => Self::DiscardAllLocalChanges,
+			Self::DiscardAllLocalChanges => Self::KeepLocalChanges,
+		}
+	}
+
+	const fn to_string_pair(self) -> (&'static str, &'static str) {
+		match self {
+			Self::KeepLocalChanges => {
+				("Don't change", " 🟡 Keep local changes")
+			}
+			Self::StashAndReapply => {
+				("Stash & reapply", " 🟢 Move local changes")
+			}
+			Self::DiscardAllLocalChanges => {
+				("Discard", " 🔴 Discard all local changes")
+			}
+		}
+	}
+
+	const fn method(self) -> CheckoutMethod {
+		match self {
+			Self::KeepLocalChanges => CheckoutMethod::KeepLocalChanges,
+			Self::StashAndReapply => CheckoutMethod::StashAndReapply,
+			Self::DiscardAllLocalChanges => {
+				CheckoutMethod::DiscardLocalChanges
+			}
+		}
+	}
+}
+
 pub struct CheckoutOptionPopup {
 	queue: Queue,
 	repo: RepoPath,
 	branch: Option<BranchInfo>,
-	option: CheckoutOptions,
+	option: CheckoutOption,
 	visible: bool,
 	key_config: SharedKeyConfig,
 	theme: SharedTheme,
@@ -41,7 +89,7 @@ impl CheckoutOptionPopup {
 			queue: env.queue.clone(),
 			repo: env.repo.borrow().clone(),
 			branch: None,
-			option: CheckoutOptions::KeepLocalChanges,
+			option: CheckoutOption::KeepLocalChanges,
 			visible: false,
 			key_config: env.key_config.clone(),
 			theme: env.theme.clone(),
@@ -85,27 +133,9 @@ impl CheckoutOptionPopup {
 		Ok(())
 	}
 
-	fn checkout(&self) -> Result<()> {
-		if let Some(branch) = &self.branch {
-			if branch.is_local() {
-				checkout_branch(&self.repo, &branch.name)?;
-			} else {
-				checkout_remote_branch(&self.repo, branch)?;
-			}
-		}
-
-		Ok(())
-	}
-
 	fn handle_event(&mut self) -> Result<()> {
-		match self.option {
-			CheckoutOptions::KeepLocalChanges => {
-				self.checkout()?;
-			}
-			CheckoutOptions::DiscardAllLocalChagnes => {
-				discard_status(&self.repo)?;
-				self.checkout()?;
-			}
+		if let Some(branch) = &self.branch {
+			checkout_with_method(&self.repo, branch, self.option.method())?;
 		}
 
 		self.queue.push(InternalEvent::Update(NeedsUpdate::ALL));
