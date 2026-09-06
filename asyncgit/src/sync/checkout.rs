@@ -98,6 +98,12 @@ mod tests {
 			.unwrap()
 	}
 
+	fn create_target_branch(repo_path: &RepoPath) -> Result<()> {
+		create_branch(repo_path, "target")?;
+		checkout_branch(repo_path, "master")?;
+		Ok(())
+	}
+
 	#[test]
 	fn test_stash_and_reapply_preserves_staged_and_unstaged_changes(
 	) -> Result<()> {
@@ -107,7 +113,7 @@ mod tests {
 			&root.as_os_str().to_str().unwrap().into();
 
 		write_commit_file(&repo, "test.txt", "base\n", "base");
-		create_branch(repo_path, "target")?;
+		create_target_branch(repo_path)?;
 
 		repo_write_file(&repo, "test.txt", "staged\n")?;
 		stage_add_file(repo_path, Path::new("test.txt"))?;
@@ -144,7 +150,7 @@ mod tests {
 			&root.as_os_str().to_str().unwrap().into();
 
 		write_commit_file(&repo, "test.txt", "base\n", "base");
-		create_branch(repo_path, "target")?;
+		create_target_branch(repo_path)?;
 
 		repo_write_file(&repo, "old.txt", "existing stash")?;
 		let existing = stash_save(repo_path, Some("existing"), true, false)?;
