@@ -61,6 +61,35 @@ pub fn stash_apply(
 	stash_id: CommitId,
 	allow_conflicts: bool,
 ) -> Result<()> {
+	stash_apply_with_options(
+		repo_path,
+		stash_id,
+		allow_conflicts,
+		false,
+	)
+}
+
+/// Apply a stash while restoring its index state as well as its worktree
+/// state.
+pub(super) fn stash_apply_reinstate_index(
+	repo_path: &RepoPath,
+	stash_id: CommitId,
+	allow_conflicts: bool,
+) -> Result<()> {
+	stash_apply_with_options(
+		repo_path,
+		stash_id,
+		allow_conflicts,
+		true,
+	)
+}
+
+fn stash_apply_with_options(
+	repo_path: &RepoPath,
+	stash_id: CommitId,
+	allow_conflicts: bool,
+	reinstate_index: bool,
+) -> Result<()> {
 	scope_time!("stash_apply");
 
 	let mut repo = repo(repo_path)?;
@@ -71,6 +100,9 @@ pub fn stash_apply(
 	checkout.allow_conflicts(allow_conflicts);
 
 	let mut opt = StashApplyOptions::default();
+	if reinstate_index {
+		opt.reinstantiate_index();
+	}
 	opt.checkout_options(checkout);
 	repo.stash_apply(index, Some(&mut opt))?;
 
@@ -129,6 +161,7 @@ mod tests {
 	use super::*;
 	use crate::sync::{
 		commit, get_commit_files, get_commits_info, stage_add_file,
+		status::{get_status, StatusType},
 		tests::{
 			debug_cmd_print, get_statuses, repo_init,
 			write_commit_file,
@@ -301,6 +334,40 @@ mod tests {
 		let res = stash_apply(repo_path, id, true);
 
 		assert!(res.is_ok());
+	}
+
+	#[test]
+	fn test_stash_apply_reinstates_index() -> Result<()> {
+		let (_td, repo) = repo_init()?;
+		let root = repo.path().parent().unwrap();
+		let repo_path: &RepoPath =
+			&root.as_os_str().to_str().unwrap().into();
+		let file_path = Path::new("test.txt");
+
+		write_commit_file(&repo, "test.txt", "base\n", "base");
+		repo_write_file(&repo, "test.txt", "staged\n")?;
+		stage_add_file(repo_path, file_path)?;
+		repo_write_file(&repo, "test.txt", "staged\nunstaged\n")?;
+
+		let id = stash_save(repo_path, None, true, false)?;
+		assert_eq!(get_statuses(repo_path), (0, 0));
+
+		stash_apply_reinstate_index(repo_path, id, false)?;
+
+		assert_eq!(
+			get_status(repo_path, StatusType::Stage, None)?.len(),
+			1
+		);
+		assert_eq!(
+			get_status(repo_path, StatusType::WorkingDir, None)?.len(),
+			1
+		);
+		assert_eq!(
+			repo_read_file(&repo, "test.txt")?,
+			"staged\nunstaged\n"
+		);
+
+		Ok(())
 	}
 
 	#[test]
