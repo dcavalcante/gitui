@@ -3,6 +3,7 @@ use crate::components::{
 	DrawableComponent, EventState,
 };
 use crate::queue::{InternalEvent, NeedsUpdate};
+use crate::strings::CheckoutOptions;
 use crate::try_or_popup;
 use crate::{
 	app::Environment,
@@ -25,47 +26,55 @@ use ratatui::{
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum CheckoutOption {
-	KeepLocalChanges,
+	Existing(CheckoutOptions),
 	StashAndReapply,
-	DiscardAllLocalChanges,
 }
 
 impl CheckoutOption {
 	const fn previous(self) -> Self {
 		match self {
-			Self::KeepLocalChanges => Self::DiscardAllLocalChanges,
-			Self::StashAndReapply => Self::KeepLocalChanges,
-			Self::DiscardAllLocalChanges => Self::StashAndReapply,
+			Self::Existing(CheckoutOptions::KeepLocalChanges) => {
+				Self::Existing(CheckoutOptions::KeepLocalChanges.previous())
+			}
+			Self::Existing(CheckoutOptions::DiscardAllLocalChagnes) => {
+				Self::StashAndReapply
+			}
+			Self::StashAndReapply => {
+				Self::Existing(CheckoutOptions::KeepLocalChanges)
+			}
 		}
 	}
 
 	const fn next(self) -> Self {
 		match self {
-			Self::KeepLocalChanges => Self::StashAndReapply,
-			Self::StashAndReapply => Self::DiscardAllLocalChanges,
-			Self::DiscardAllLocalChanges => Self::KeepLocalChanges,
+			Self::Existing(CheckoutOptions::KeepLocalChanges) => {
+				Self::StashAndReapply
+			}
+			Self::StashAndReapply => {
+				Self::Existing(CheckoutOptions::KeepLocalChanges.next())
+			}
+			Self::Existing(CheckoutOptions::DiscardAllLocalChagnes) => {
+				Self::Existing(CheckoutOptions::DiscardAllLocalChagnes.next())
+			}
 		}
 	}
 
 	const fn to_string_pair(self) -> (&'static str, &'static str) {
 		match self {
-			Self::KeepLocalChanges => {
-				("Don't change", " 🟡 Keep local changes")
-			}
+			Self::Existing(option) => option.to_string_pair(),
 			Self::StashAndReapply => {
 				("Stash & reapply", " 🟢 Move local changes")
-			}
-			Self::DiscardAllLocalChanges => {
-				("Discard", " 🔴 Discard all local changes")
 			}
 		}
 	}
 
 	const fn method(self) -> CheckoutMethod {
 		match self {
-			Self::KeepLocalChanges => CheckoutMethod::KeepLocalChanges,
+			Self::Existing(CheckoutOptions::KeepLocalChanges) => {
+				CheckoutMethod::KeepLocalChanges
+			}
 			Self::StashAndReapply => CheckoutMethod::StashAndReapply,
-			Self::DiscardAllLocalChanges => {
+			Self::Existing(CheckoutOptions::DiscardAllLocalChagnes) => {
 				CheckoutMethod::DiscardLocalChanges
 			}
 		}
@@ -89,7 +98,9 @@ impl CheckoutOptionPopup {
 			queue: env.queue.clone(),
 			repo: env.repo.borrow().clone(),
 			branch: None,
-			option: CheckoutOption::KeepLocalChanges,
+			option: CheckoutOption::Existing(
+				CheckoutOptions::KeepLocalChanges,
+			),
 			visible: false,
 			key_config: env.key_config.clone(),
 			theme: env.theme.clone(),
